@@ -1,6 +1,7 @@
 // Jenkinsfile - Pipeline de "Sistema Alumnos" (SecureDev · Evaluación Parcial 3 · OCY1102)
 //
-// Incluye Build, Test, revisiones de seguridad (SAST y dependencias), staging, DAST y despliegue en producción.
+// Esta es la versión BASE: construye, prueba y despliega en producción.
+// Los marcadores  >>> [ETIQUETA]  indican dónde agregar las etapas de seguridad.
 pipeline {
     agent any
 
@@ -48,51 +49,55 @@ pipeline {
             }
         }
 
-        stage('Security Review (SAST)') {
+        // >>> [SEGURIDAD]: aquí van las etapas "Security Review (SAST)" y "Dependency Management"
+
+          stage('Security Review (SAST)') {
             steps {
-                sh '.venv/bin/bandit -r app.py -f json -o reports/bandit.json || true'
-                sh '.venv/bin/bandit -r app.py || true'
+                sh 'bandit -f json -o reports/bandit.json app.py || true'
+                sh 'bandit -f txt -o reports/bandit.txt app.py || true'
+                sh 'cat reports/bandit.txt'
+                script {
+                    def rc = sh(returnStatus: true, script: 'bandit -q -ll app.py')
+                    if (rc != 0) { unstable('Bandit encontró hallazgos Medium/High') }
+                }
             }
         }
 
         stage('Dependency Management') {
             steps {
-                sh '.venv/bin/pip-audit -f json -o reports/pip-audit.json || true'
-                sh '.venv/bin/pip-audit || true'
+                sh 'pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true'
+                script {
+                    def rc = sh(returnStatus: true, script: 'pip-audit -r requirements.txt > reports/pip-audit.txt 2>&1')
+                    sh 'cat reports/pip-audit.txt'
+                    if (rc != 0) { unstable('pip-audit encontró dependencias vulnerables') }
+                }
             }
         }
+        
 
+        // >>> [ZAP]: aquí van las etapas "Deploy Staging" y "DAST - OWASP ZAP"
         stage('Deploy Staging') {
             steps {
-                sh 'bash scripts/deploy.sh staging 5001 || bash scripts/deploy.sh staging 5000'
+                sh 'bash scripts/deploy.sh staging 5001'
             }
         }
 
         stage('DAST - OWASP ZAP') {
             steps {
-                sh '''
-                    mkdir -p reports
-                    TARGET_URL="http://127.0.0.1:5001"
-                    if ! curl -sf "$TARGET_URL/health" > /dev/null 2>&1; then
-                        TARGET_URL="http://127.0.0.1:5000"
-                    fi
-
-                    if command -v zap-baseline.py >/dev/null 2>&1; then
-                        zap-baseline.py -t "$TARGET_URL" -r zap-report.html -J zap-report.json || true
-                        cp /zap/wrk/zap-report.* reports/ 2>/dev/null || true
-                    elif command -v docker >/dev/null 2>&1; then
-                        docker run --rm --network host -v "$(pwd)/reports:/zap/wrk/:rw" \
-                            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-                            -t "$TARGET_URL" -r zap-report.html -J zap-report.json || true
-                    else
-                        echo "ZAP no está instalado en este entorno; revisa el agente o contenedor de Jenkins."
-                    fi
-                '''
+                script {
+                    def rc = sh(returnStatus: true, script: 'python3 scripts/zap_scan.py http://jenkins:5001')
+                    if (rc == 2) { unstable('OWASP ZAP encontró alertas High/Medium') }
+                    else if (rc != 0) { error("ZAP no pudo ejecutarse (código ${rc})") }
+                }
             }
         }
 
         stage('Deploy Producción') {
             // >>> [GATE]: aquí va la condición "when" que protege producción
+             when {
+                expression { currentBuild.currentResult == 'SUCCESS' }
+            }
+
             steps {
                 sh 'bash scripts/deploy.sh produccion 5000'
                 script { env.PRODUCCION = env.APP_VERSION }
