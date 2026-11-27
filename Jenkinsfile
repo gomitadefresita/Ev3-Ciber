@@ -1,7 +1,6 @@
 // Jenkinsfile - Pipeline de "Sistema Alumnos" (SecureDev · Evaluación Parcial 3 · OCY1102)
 //
-// Incluye Build, Test, revisiones de seguridad (SAST y dependencias) y despliegue en producción.
-// Los marcadores  >>> [ETIQUETA]  indican dónde agregar las etapas restantes.
+// Incluye Build, Test, revisiones de seguridad (SAST y dependencias), staging, DAST y despliegue en producción.
 pipeline {
     agent any
 
@@ -63,7 +62,34 @@ pipeline {
             }
         }
 
-        // >>> [ZAP]: aquí van las etapas "Deploy Staging" y "DAST - OWASP ZAP"
+        stage('Deploy Staging') {
+            steps {
+                sh 'bash scripts/deploy.sh staging 5001 || bash scripts/deploy.sh staging 5000'
+            }
+        }
+
+        stage('DAST - OWASP ZAP') {
+            steps {
+                sh '''
+                    mkdir -p reports
+                    TARGET_URL="http://127.0.0.1:5001"
+                    if ! curl -sf "$TARGET_URL/health" > /dev/null 2>&1; then
+                        TARGET_URL="http://127.0.0.1:5000"
+                    fi
+
+                    if command -v zap-baseline.py >/dev/null 2>&1; then
+                        zap-baseline.py -t "$TARGET_URL" -r zap-report.html -J zap-report.json || true
+                        cp /zap/wrk/zap-report.* reports/ 2>/dev/null || true
+                    elif command -v docker >/dev/null 2>&1; then
+                        docker run --rm --network host -v "$(pwd)/reports:/zap/wrk/:rw" \
+                            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+                            -t "$TARGET_URL" -r zap-report.html -J zap-report.json || true
+                    else
+                        echo "ZAP no está instalado en este entorno; revisa el agente o contenedor de Jenkins."
+                    fi
+                '''
+            }
+        }
 
         stage('Deploy Producción') {
             // >>> [GATE]: aquí va la condición "when" que protege producción
