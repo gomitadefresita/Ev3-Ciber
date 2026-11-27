@@ -1,7 +1,7 @@
 // Jenkinsfile - Pipeline de "Sistema Alumnos" (SecureDev · Evaluación Parcial 3 · OCY1102)
 //
-// Esta es la versión BASE: construye, prueba y despliega en producción.
-// Los marcadores  >>> [ETIQUETA]  indican dónde agregar las etapas de seguridad.
+// Incluye Build, Test, revisiones de seguridad (SAST y dependencias) y despliegue en producción.
+// Los marcadores  >>> [ETIQUETA]  indican dónde agregar las etapas restantes.
 pipeline {
     agent any
 
@@ -49,7 +49,19 @@ pipeline {
             }
         }
 
-        // >>> [SEGURIDAD]: aquí van las etapas "Security Review (SAST)" y "Dependency Management"
+        stage('Security Review (SAST)') {
+            steps {
+                sh '.venv/bin/bandit -r app.py -f json -o reports/bandit.json || true'
+                sh '.venv/bin/bandit -r app.py'
+            }
+        }
+
+        stage('Dependency Management') {
+            steps {
+                sh '.venv/bin/pip-audit -f json -o reports/pip-audit.json || true'
+                sh '.venv/bin/pip-audit'
+            }
+        }
 
         // >>> [ZAP]: aquí van las etapas "Deploy Staging" y "DAST - OWASP ZAP"
 
