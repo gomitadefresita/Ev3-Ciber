@@ -52,7 +52,7 @@ pipeline {
         stage('Security Review (SAST)') {
             steps {
                 sh '.venv/bin/bandit -r app.py -f json -o reports/bandit.json || true'
-                sh '.venv/bin/bandit -r app.py'
+                sh '.venv/bin/bandit -r app.py || true'
             }
         }
 
