@@ -1,4 +1,4 @@
 # Dependencias solo para pruebas (no se instalan en los despliegues).
-pytest==9.0.3
+pytest==9.2.0
 bandit
 pip-audit
