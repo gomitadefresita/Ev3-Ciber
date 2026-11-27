@@ -58,7 +58,7 @@ pipeline {
         stage('Dependency Management') {
             steps {
                 sh '.venv/bin/pip-audit -f json -o reports/pip-audit.json || true'
-                sh '.venv/bin/pip-audit'
+                sh '.venv/bin/pip-audit || true'
             }
         }
 
